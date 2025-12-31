@@ -42,20 +42,19 @@ Every server—whether a 5-minute deathmatch or a 5-year persistent world—is a
 A lightweight microservice/admin app.
 
 *   **Role**:
-    *   **System of Record**: Maintains the authoritative database of "Known Worlds" OR "ACTIVE Worlds"and their configurations (e.g., "The Daily Survival Server" uses Image X and Bucket Y).
-        *   **Catalog**: Knows which "Worlds" exist (metadata only: World Name, Last Backup Path, Config).
-            * Would this be Backstage catalog entities, or something that Backstage can ingest into entities? 
-            * Is Backstage the user-facing front-end, beyond chatops, and Django the admin backend?
+    *   **Dynamic State Manager**: Tracks the *runtime* state of worlds (Active, Sleeping, Maintenance).
+    *   **Secrets Vault**: Stores sensitive configuration (RCON passwords, API keys) that cannot live in Git.
     *   **Allocator**: When a request comes in (from Chat, Backstage, or a Game Portal), Tafl instructs Agones to create/allocate a specific `GameServer` or claim one from a Fleet.
     *   **API**: `POST /api/worlds/{id}/wake` -> Creates Agones GameServer with `env: WORLD_ID={id}`.
 *   **Integration**:
-    *   **Backstage**:
-        *   **Ingestion**
-            * MAYBE an `EntityProvider` in Backstage queries Tafl's API to populate the Catalog. Tafl is the source; Backstage is the view. 
-            * OR rely on natural Backstage catalog entries coming from static Git repos to define all _known_ worlds while Tafl maintains which are _active_
-            * REMEMBERING that Crossplane and CRDs get along really well, and can allow Backstage to load possible CRDs directly as templates for the Scaffolder ...
-        *   **Context**: Entities can be hierarchical (e.g., System: "Ark Cluster A", Component: "Map B").
-        *   **Actions**: "Start Server" button in Backstage triggers `Tafl.wake()`.
+    *   **Backstage (The Hybrid Catalog)**:
+        *   **Static Truth (Git)**: "World Definitions" (Name, Game Type, Default Config, Docker Image) are defined in `catalog-info.yaml` files in Git. Backstage ingests these as `Resource` entities.
+            * **Context**: Entities can be hierarchical (e.g., System: "Ark Cluster A", Component: "Map B", Resources as noted above).
+            * Crossplane and CRDs get along really well, and can allow Backstage to load possible CRDs directly as templates for the Scaffolder ...
+        *   **Dynamic Truth (Tafl)**: A Backstage plugin queries the Tafl API to overlay real-time data onto these entities:
+            *   *Status*: "Online (1 Active Player)" or "Sleeping".
+            *   *Controls*: "Wake" button is enabled/disabled based on this state.
+        *   **Actions**: The "Wake" button in Backstage triggers a call to `Tafl.wake(world_id)`.
     *   **Autoboros**: Discord commands (`/tafl wake`) talk to Tafl API.
 
 ### 2.2 The "Portal" Flow (Dynamic Dimensions)
@@ -112,16 +111,16 @@ Consider also a potential link with services like Geforce Now which could host s
 *   **Why**:
     *   Matches **Autoboros**.
     *   Great Admin UI for manually tweaking "World Configurations" (e.g., changing the docker image for a specific world).
-        * Would this persist to Git or is it a different layer? Some config is too sensitive for Git, other bits too dynamic.
+        *   *Note*: While Git/Backstage holds the "Default" config, Tafl's DB holds the "Effective" config (e.g., if an Admin temporarily overrides the image for a debug session).
     *   Can run **Agones Client SDK** (Python) easily to watch/control the cluster.
     *   Provides the REST API for Backstage/ChatOps.
 
 ### 4.2 Frontend: Backstage & ChatOps
 
-*   **Backstage**: The primary "Read" interface OR the full enchilada backed by authoratative Git details, while Tafl just figures out what's alive.
-    *   **Catalog**: Ingests `GameWorld` entities from Tafl OR from Git.
-    *   **Plugin**: A custom view querying Tafl API for real-time status (Agones State).
-    *   **Actions**: Scaffolder actions to create new worlds; Action buttons to Wake/Sleep/Backup.
+*   **Backstage**: The user-facing portal.
+    *   **Catalog**: Ingests "World Definitions" from Git (via standard processors).
+    *   **Plugin**: `backstage-plugin-tafl` (frontend only) calls `tafl-api` to search for active fleets/servers matching the Git entity's ID.
+    *   **Actions**: Scaffolder actions to scaffold *new* `catalog-info.yaml` files for new worlds; "Wake" actions to interact with existing ones.
 *   **Autoboros (Discord)**: The primary "Command" interface.
     *   `/tafl wake daily-survival`
 
