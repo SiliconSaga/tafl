@@ -1,173 +1,146 @@
 # Tafl: High-Level Design Document
 
-**Tafl** is a game server orchestration layer for the Yggdrasil ecosystem. It is meant to wrap the **Agones** Kubernetes operator to manage various game server lifecycles — from short-lived minigames to long-running persistent worlds.
+Tafl is a game server orchestration layer for the Yggdrasil ecosystem. It wraps the Agones Kubernetes operator to manage game server lifecycles, from short-lived minigames to long-running persistent worlds.
 
-## 1. Core Philosophy
+## Core Philosophy
 
-Avoiding the split between "Deployments for persistence" and "Agones for sessions." Instead, we utilize Agones for **everything** by treating persistent worlds as "Hydrated Cattle."
+Avoiding the split between "Deployments for persistence" and "Agones for sessions." Instead, we use Agones for everything by treating persistent worlds as "Hydrated Cattle."
 
-### 1.1 The Architecture
+### Architecture
 
-*   **Agones**: The server engine. It handles fleet scaling, port allocation, health checking, and lifecycle management.
-*   **Tafl Orchestrator (Django)**: The "Brain." A lightweight API/Admin layer that:
-    *   Configs Agones `Fleets` and `GameServers`.
-    *   Injects "Identity" (World IDs, Backup Paths) into Agones allocations.
-        * Potentially also Keycloak if compatible with player identities
-    *   Serves as the connector between ChatOps/Backstage and the K8s cluster.
-*   **Data Layer**:
-    *   **Garage (S3 compatible, can use a public cloud option)**: World data / backups.
-    *   **Heimdall/Loki**: Log storage (since pods are ephemeral).
-    *   **Heimdall/Grafana**: Dashboards
+- **Agones**: The server engine. Handles fleet scaling, port allocation, health checking, and lifecycle management.
+- **Tafl Orchestrator (Django)**: The "Brain." A lightweight API/Admin layer that:
+  - Configures Agones Fleets and GameServers.
+  - Injects identity (World IDs, backup paths) into Agones allocations.
+  - Potentially integrates Keycloak for player identities.
+  - Connects ChatOps/Backstage to the K8s cluster.
+- **Data Layer**:
+  - Garage (S3 compatible, or a public cloud option): World data and backups.
+  - Heimdall/Loki: Log storage (since pods are ephemeral).
+  - Heimdall/Grafana: Dashboards.
 
-### 1.2 The "Hydrated Cattle" GameServer
+### The "Hydrated Cattle" GameServer
 
-Every server—whether a 5-minute deathmatch or a 5-year persistent world—is an Agones `GameServer`.
+Every server, whether a 5-minute deathmatch or a 5-year persistent world, is an Agones GameServer.
 
-*   **Startup (Hydration)**:
-    *   Agones creates a Pod.
-    *   `initContainer` checks env vars (e.g., `WORLD_ID`, `BACKUP_URL`) provided by Tafl during allocation.
-    *   It pulls the latest snapshot from Garage (S3).
-    *   Server starts.
-*   **Shutdown (Dehydration)**:
-    *   Server detects inactivity (or API signal).
-    *   Server triggers "Maintenance Mode" (if relevant then kick players gently, similar approach for game version updates).
-    *   `preStop` hook or sidecar snapshots state -> uploads to Garage.
-    *   Server process exits.
-    *   Agones detects shutdown -> cleans up the Pod.
+- **Startup (Hydration)**:
+  - Agones creates a Pod.
+  - initContainer checks env vars (e.g. `WORLD_ID`, `BACKUP_URL`) provided by Tafl during allocation.
+  - Pulls the latest snapshot from Garage (S3).
+  - Server starts.
+- **Shutdown (Dehydration)**:
+  - Server detects inactivity (or receives an API signal).
+  - Triggers "Maintenance Mode" (gently kicks players; same approach for game version updates).
+  - preStop hook or sidecar snapshots state and uploads to Garage.
+  - Server process exits.
+  - Agones detects shutdown and cleans up the Pod.
 
-## 2. Orchestration & Integrations
+## Orchestration and Integrations
 
-### 2.1 Tafl Orchestrator (Django)
+### Tafl Orchestrator (Django)
 
 A lightweight microservice/admin app.
 
-*   **Role**:
-    *   **Dynamic State Manager**: Tracks the *runtime* state of worlds (Active, Sleeping, Maintenance).
-    *   **Secrets Vault**: Stores sensitive configuration (RCON passwords, API keys) that cannot live in Git.
-    *   **Allocator**: When a request comes in (from Chat, Backstage, or a Game Portal), Tafl instructs Agones to create/allocate a specific `GameServer` or claim one from a Fleet.
-    *   **API**: `POST /api/worlds/{id}/wake` -> Creates Agones GameServer with `env: WORLD_ID={id}`.
-*   **Integration**:
-    *   **Backstage (The Hybrid Catalog)**:
-        *   **Static Truth (Git)**: "World Definitions" (Name, Game Type, Default Config, Docker Image) are defined in `catalog-info.yaml` files in Git. Backstage ingests these as `Resource` entities.
-            * **Context**: Entities can be hierarchical (e.g., System: "Ark Cluster A", Component: "Map B", Resources as noted above).
-            * Crossplane and CRDs get along really well, and can allow Backstage to load possible CRDs directly as templates for the Scaffolder ...
-        *   **Dynamic Truth (Tafl)**: A Backstage plugin queries the Tafl API to overlay real-time data onto these entities:
-            *   *Status*: "Online (1 Active Player)" or "Sleeping".
-            *   *Controls*: "Wake" button is enabled/disabled based on this state.
-        *   **Actions**: The "Wake" button in Backstage triggers a call to `Tafl.wake(world_id)`.
-    *   **Autoboros**: Discord commands (`/tafl wake`) talk to Tafl API.
+- **Dynamic State Manager**: Tracks runtime state of worlds (Active, Sleeping, Maintenance).
+- **Secrets Vault**: Stores sensitive configuration (RCON passwords, API keys) that cannot live in Git.
+- **Allocator**: When a request comes in (from Chat, Backstage, or a Game Portal), Tafl instructs Agones to create/allocate a specific GameServer or claim one from a Fleet.
+- **API**: `POST /api/worlds/{id}/wake` creates an Agones GameServer with `env: WORLD_ID={id}`.
 
-### 2.2 The "Portal" Flow (Dynamic Dimensions)
+Integration points:
 
-*Scenario: A player in Terasology enters a portal to "The Red Dimension".*
+- **Backstage (The Hybrid Catalog)**:
+  - Static Truth (Git): "World Definitions" (name, game type, default config, Docker image) are defined in `catalog-info.yaml` files. Backstage ingests these as Resource entities. Entities can be hierarchical (e.g. System: "Ark Cluster A", Component: "Map B").
+  - Dynamic Truth (Tafl): A Backstage plugin queries the Tafl API to overlay real-time data, status ("Online (1 Active Player)" or "Sleeping"), and controls ("Wake" button enabled/disabled).
+  - Actions: The "Wake" button triggers a call to `Tafl.wake(world_id)`.
+  - Crossplane and CRDs could allow Backstage to load CRDs directly as Scaffolder templates. (Open question: does Agones play well with Crossplane?)
+- **Autoboros**: Discord commands (`/tafl wake`) talk to Tafl API.
 
-1.  **Trigger**: The source game server (or client) hits the **Bifrost/Tafl API**: "Requesting instance of map `red-dimension` for party `xyz`."
-2.  **Allocation**:
-    *   Tafl checks for an existing `Fleet` of "Terasology Generic" servers.
-    *   If a Fleet exists (warm ready servers), Tafl allocates one and injects the "Red Dimension" config via annotation/GRPC.
-    *   If no Fleet exists, Tafl creates a standalone `GameServer`.
-3.  **Hydration**:
-    *   Server (or initContainer) downloads `red-dimension` assets/state.
-    *   Registers itself ready with Agones.
-    *   May be possible to use a generic base pod then hot-inject specific game assets, maybe from an added sidecar? Especially if a Gestalt game ..
-4.  **Handoff**:
-    *   Tafl returns the IP:Port to the source server.
-    *   Player is transferred.
-    *   How far is it really for the target server to be running a different game rather than just a different world ....
-        * Most feasible visual transfer challenge: enter special portal in DS, appear to land on a Terasology world surface in your DS ship, now made of blocks. Or just literally land on a DS planet to swap to 3D mode (maybe a button / hot key when you've landed) and exit your space ship.
-5.  **Cleanup**:
-    *   Player leaves.
-    *   Server backups any changes (if persistent) or just logs stats.
-    *   Server exits. Pod is deleted. Resources returned to pool.
+### The "Portal" Flow (Dynamic Dimensions)
 
-## 3. Resource Strategy: Fleets vs. Standalone
+Scenario: A player in Terasology enters a portal to "The Red Dimension."
 
-We utilize two distinct patterns within Agones:
+1. The source game server hits the Bifrost/Tafl API: "Requesting instance of map `red-dimension` for party `xyz`."
+2. Tafl checks for an existing Fleet of "Terasology Generic" servers.
+   - If a Fleet exists (warm ready servers), Tafl allocates one and injects the config via annotation/gRPC.
+   - If no Fleet exists, Tafl creates a standalone GameServer.
+3. The server (or initContainer) downloads `red-dimension` assets/state, then registers as ready with Agones. Hot-injection of game assets via sidecar may be possible, especially for Gestalt-based games.
+4. Tafl returns the IP:Port to the source server and the player is transferred. (How far-fetched is it for the target server to be running a different game entirely? See the Bifrost design for cross-game portal scenarios.)
+5. After the player leaves, the server backs up any changes (if persistent) or logs stats, then exits. Pod is deleted and resources return to pool.
 
-### 3.1 The "Warm Fleet" (Generic Hosts)
+## Resource Strategy: Fleets vs. Standalone
 
-*   **Use Case**: Popular game types where startup time is critical (e.g., Terasology Light & Shadow, Vanilla Minecraft).
-*   **Strategy**: Maintain a Fleet of `replicas: 2` running a "Generic" image. These pods are already scheduled and passing health checks.
-*   **Activation**: When Tafl allocates a server from this fleet, it passes the `WORLD_ID` (via Agones SDK or annotation). The server app then "hot-loads" the world data from suitable storage.
-*   **Pro**: Near-instant startup (no K8s scheduling delay).
-*   **Con**: Requires the game engine to support "Hot Loading" levels (or restarting its internal process quickly).
+### Warm Fleet (Generic Hosts)
 
-This could also include a generic "lobby world" where you can pick your game details "in game"
+- **Use Case**: Popular game types where startup time is critical (e.g. Terasology Light & Shadow).
+- **Strategy**: Maintain a Fleet of `replicas: 2` running a "Generic" image. Pods are already scheduled and passing health checks.
+- **Activation**: Tafl passes the `WORLD_ID` on allocation. The server app hot-loads the world data from storage.
+- **Pro**: Near-instant startup (no K8s scheduling delay).
+- **Con**: Requires the game engine to support hot-loading levels.
 
-Consider also a potential link with services like Geforce Now which could host such warm server/client pairs that send literal rendered frames to the thin client run by the user (potentially while the local thick client is installed) - this could also power a visual portal showing what's on the other side (asie might like this)
+This could also serve as a generic "lobby world" where players pick their game details in-game.
 
-### 3.2 The "Standalone GameServer" (Specific Hosts)
+Potential future link with streaming services like GeForce Now: host warm server/client pairs that send rendered frames to a thin client while the local thick client installs.
 
-*   **Use Case**: Heavily modded servers, unique modpacks (ARK with 50 mods), or rarely played worlds.
-*   **Strategy**: Tafl submits a brand new `GameServer` manifest to K8s on demand.
-*   **Activation**: Standard K8s pod startup -> `initContainer` download -> Start.
-*   **Pro**: Complete isolation; can use totally different Docker images per world.
-*   **Con**: Slower startup (Scheduler + Image Pull + Init).
+### Standalone GameServer (Specific Hosts)
 
-## 4. Technology Stack
+- **Use Case**: Heavily modded servers, unique modpacks, or rarely played worlds.
+- **Strategy**: Tafl submits a new GameServer manifest to K8s on demand.
+- **Activation**: Standard K8s pod startup, initContainer download, then start.
+- **Pro**: Complete isolation; can use totally different Docker images per world.
+- **Con**: Slower startup (Scheduler + Image Pull + Init).
 
-### 4.1 Backend: Django
+## Technology Stack
 
-*   **Why**:
-    *   Matches **Autoboros**.
-    *   Great Admin UI for manually tweaking "World Configurations" (e.g., changing the docker image for a specific world).
-        *   *Note*: While Git/Backstage holds the "Default" config, Tafl's DB holds the "Effective" config (e.g., if an Admin temporarily overrides the image for a debug session).
-    *   Can run **Agones Client SDK** (Python) easily to watch/control the cluster.
-    *   Provides the REST API for Backstage/ChatOps.
+### Backend: Django
 
-### 4.2 Frontend: Backstage & ChatOps
+- Matches Autoboros.
+- Great Admin UI for tweaking world configurations (e.g. changing the Docker image for a debug session). Git/Backstage holds the "Default" config; Tafl's DB holds the "Effective" config.
+- Runs the Agones Client SDK (Python) to watch/control the cluster.
+- Provides the REST API for Backstage and ChatOps.
 
-*   **Backstage**: The user-facing portal.
-    *   **Catalog**: Ingests "World Definitions" from Git (via standard processors).
-    *   **Plugin**: `backstage-plugin-tafl` (frontend only) calls `tafl-api` to search for active fleets/servers matching the Git entity's ID.
-    *   **Actions**: Scaffolder actions to scaffold *new* `catalog-info.yaml` files for new worlds; "Wake" actions to interact with existing ones.
-*   **Autoboros (Discord)**: The primary "Command" interface.
-    *   `/tafl wake daily-survival`
+### Frontend: Backstage and ChatOps
 
-### 4.3 Infrastructure
+- **Backstage**: The user-facing portal.
+  - Catalog ingests "World Definitions" from Git via standard processors.
+  - `backstage-plugin-tafl` (frontend only) calls the Tafl API to find active fleets/servers matching an entity's ID.
+  - Scaffolder actions to create new `catalog-info.yaml` files for new worlds; "Wake" actions for existing ones.
+- **Chatbot (Discord)**: The primary command interface. `/tafl wake daily-survival`
 
-Other Yggdrasil projects
+### Infrastructure
 
-*   **Norðri**: Hosts the Agones controller.
-*   **Garage**: Stores the `world.zip` files and such
-*   **Nidavellir**: Keycloak handles auth for the Django API (and potentially even for game identities for games that support it). Gateway API / ingress.
-    * Likely "Vegvísir" would be the sub-term for ingress control / gateway / routing
-*   **Heimdall**: Observability
-*   **Autoboros**: ChatOps
+Other Yggdrasil projects:
 
-## 5. Implementation Strategy
+- **Nordri**: Hosts the Agones controller.
+- **Garage**: Stores world data and backups.
+- **Nidavellir**: Keycloak handles auth for the Django API. Vegvisir handles ingress/gateway/routing.
+- **Heimdall**: Observability.
+- **Knarr**: ChatOps and related services.
 
-Look at https://agones.dev/site/docs/getting-started/create-gameserver/ and https://github.com/googleforgames/agones/tree/release-1.54.0/examples/simple-game-server to do an initial prototype just to play around with. 
+## Implementation Strategy
 
-https://agones.dev/site/docs/getting-started/edit-first-gameserver-go/ mentions "We would welcome a Pull Request to expand this to include other platforms as well" which would be a neat first contribution, using Nodri as a k3s base with the Gateway API included to allow private cloud with smart routing. Assuming that setup gets along with Agones, anyway, which would really be the first challenge to examine!
+References:
+- https://agones.dev/site/docs/getting-started/create-gameserver/
+- https://github.com/googleforgames/agones/tree/release-1.54.0/examples/simple-game-server
 
-1.  **Agones Base**: Ensure Agones allows "adhoc" GameServer creation (not just Fleets) for unique worlds.
-2.  **The "Universal" Game Image**:
-    *   Create a Docker image (e.g., for Minecraft) that accepts `BACKUP_URL` as an env var.
-    *   Script the `initContainer` (restore) and `sidecar` (backup).
-    *   Again consider the hot-injection of game details and/or the generic lobby world. Gestalt-Bifrost with networking and other fun?
-3.  **Tafl Prototype (Django)**:
-    *   Model: `GameWorld` (Name, ImageRef, BackupUrl).
-    *   View: `wake_world(request, world_id)` -> Uses Kubernetes Python Client to submit a `GameServer` manifest to the cluster.
-4.  **Backstage connection**:
-    *   Add a proxy in Backstage to the Tafl Django API.
-    *   Verify we can see "Active" vs "Inactive" worlds.
+The Agones docs mention "We would welcome a Pull Request to expand this to include other platforms" which could be a contribution opportunity using Nordri as a k3s base with Gateway API for private cloud routing. First challenge: confirm Agones works with this setup.
 
-## 6. Potential Challenges
+Steps:
 
-*   **Startup Latency**: "Hydrating" (downloading) 5GB worlds takes time.
-    *   *Mitigation*: Use "Node Caching" for common assets? Keep "Warm" fleets for popular map types?
-*   **Concurrency**: Ensure we don't spin up two versions of the *same* persistent world (Split Brain).
-    *   *Solution*: Tafl DB tracks lock status. `wake_world` fails if status is already `Active`. Agones `Allocated` status is the source of truth.
-*   **Scaling**: Architect games with deeper integration to be compatible with horizontal scaling (more pods) and do Spatial Partitioning ("Sector" concept in Terasology, "Grid" for EVE Online, etc). Then suddenly Agones may be able to handle that as a Fleet of zones or the like. 
-    * DestSol could be architected like this as an example considering it still needs to have its networking built from the ground up, with the galaxy size increased. Add EVE-style Constellations and Regions, then vary what gets loaded based on distance or density. Star lanes make up transition points to potentially sector-transfer.
+1. **Agones Base**: Ensure Agones allows adhoc GameServer creation (not just Fleets) for unique worlds.
+2. **Universal Game Image**: Create a Docker image (e.g. for Minecraft) that accepts `BACKUP_URL` as an env var. Script the initContainer (restore) and sidecar (backup). Consider hot-injection of game details and/or a generic lobby world.
+3. **Tafl Prototype (Django)**: Model: `GameWorld` (Name, ImageRef, BackupUrl). View: `wake_world(request, world_id)` uses the Kubernetes Python Client to submit a GameServer manifest.
+4. **Backstage Connection**: Add a proxy in Backstage to the Tafl Django API. Verify we can see "Active" vs "Inactive" worlds.
 
-## Appendix A: The Shulker Question
+## Potential Challenges
 
-*Is Shulker too different?*
+- **Startup Latency**: Hydrating large worlds (5GB+) takes time. Mitigation: node caching for common assets, warm fleets for popular map types.
+- **Concurrency**: Prevent spinning up two instances of the same persistent world (split brain). Tafl DB tracks lock status; `wake_world` fails if status is already Active. Agones Allocated status is the source of truth.
+- **Scaling**: Architect games with deeper integration for horizontal scaling (more pods) and spatial partitioning ("Sector" concept in Terasology, "Grid" for EVE Online). Agones could manage a Fleet of zones. DestinationSol could be a good testbed since its networking is being built from scratch, with the galaxy size increased. Add EVE-style constellations and regions, then vary loaded content based on distance or density. Star lanes as sector-transfer transition points.
 
-Yes. Shulker is a specialized operator that *wraps* Agones specifically for Minecraft proxy networks (managing velocity.toml etc).
+## Appendix: The Shulker Question
 
-*   **Conclusion**: Tafl replaces the need for Shulker's control plane but could potentially utilize Shulker's "Minecraft-specific sidecars" (e.g., for RCON handling or partial backups) and reuse them as containers in our own pods.
-    * Is something like BungeeCord/Velocity as the "idler needed as a central proxy for MC worlds or does Tafl take over that role?
-*   **Strategy**: Build Tafl first. Look at Shulker's source code later for inspiration on how to handle Minecraft graceful shutdowns, but do not import the project.
+Is Shulker too different? Yes. Shulker is a specialized operator that wraps Agones specifically for Minecraft proxy networks (managing velocity.toml etc).
+
+- Tafl replaces the need for Shulker's control plane but could reuse Shulker's Minecraft-specific sidecars (e.g. for RCON handling or partial backups) as containers in our own pods.
+- Open question: is BungeeCord/Velocity still needed as a central proxy for MC worlds, or does Tafl take over that role?
+- Strategy: Build Tafl first. Look at Shulker's source code later for inspiration on Minecraft graceful shutdowns, but do not import the project.
