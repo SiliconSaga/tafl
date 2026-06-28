@@ -3,7 +3,7 @@
 **Status:** Draft, ready for plan
 **Date:** 2026-06-28
 **Owner:** Rasmus Praestholm
-**Related:** [Tafl High-Level Design](../../design.md), [Bifrost overview](../../../bifrost/overview.md), [Bifrost with Nakama and Agones](../../../bifrost/with-nakama-and-agones.md), [Forgejo Day-2 Design](../../../../docs/plans/2026-05-15-forgejo-day2-design.md), [Heimdall architecture](../../../heimdall/docs/architecture.md), [Nordri bootstrap](../../../nordri/docs/bootstrap.md)
+**Related:** [Tafl High-Level Design](../../design.md) (in-repo). Cross-repo references (paths relative to the yggdrasil workspace root): Bifrost — `components/bifrost/overview.md`, `components/bifrost/with-nakama-and-agones.md`; Forgejo Day-2 — `docs/plans/2026-05-15-forgejo-day2-design.md`; Heimdall — `components/heimdall/docs/architecture.md`; Nordri — `components/nordri/docs/bootstrap.md`.
 
 ## Overview
 
@@ -43,7 +43,7 @@ A server *instance* is represented as **data** — a structured entry carrying i
 
 ### Repo structure (in `kubicvalheim`)
 
-```
+```text
 docker/                 # flavor 1: docker-compose.yml + docs
 kustomize/
   base/                 # deployment, service (NodePort/UDP), pvc, configmap-playerlists, secret (placeholder)
