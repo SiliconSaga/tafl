@@ -619,6 +619,10 @@ if [[ ! "$NAME" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
   echo "ERROR: <name> must be a DNS-1123 label (lowercase alphanumerics and '-', start/end alphanumeric)" >&2
   exit 1
 fi
+if (( ${#NAME} > 55 )); then
+  echo "ERROR: <name> must be <=55 chars so the namespace valheim-<name> stays within Kubernetes' 63-char limit" >&2
+  exit 1
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OVERLAY="$ROOT/kustomize/overlays/$NAME"
