@@ -63,7 +63,7 @@ Shared bases/components stay eligible to graduate up into the `KubicGameHosting`
 ### Image and exposure
 
 - **Image:** `mbround18/valheim` pinned to a known-good tag (not `:latest`), with its "Huginn" HTTP server enabled (`HTTP_PORT` + `PUBLIC=1`) so it serves a native Prometheus `/metrics` endpoint and a `/status` endpoint — no exporter sidecar needed. License is BSD-3-Clause (permissive). The world PVC is bumped from 1Gi to ~10Gi.
-- **Exposure:** a NodePort UDP Service (2456-2457), with `externalTrafficPolicy: Local` to preserve player source IPs. NodePort is the pragmatic choice because Traefik does not yet implement the Gateway API `UDPRoute` resource (see Phase 3) and UDP LoadBalancers (k3s ServiceLB and cloud) have been historically unreliable. Exposure is a swappable component so a better option drops in later without touching the core.
+- **Exposure:** a NodePort UDP Service (final port set TBD — see Decisions deferred to plan time), with `externalTrafficPolicy: Local` to preserve player source IPs. NodePort is the pragmatic choice because Traefik does not yet implement the Gateway API `UDPRoute` resource (see Phase 3) and UDP LoadBalancers (k3s ServiceLB and cloud) have been historically unreliable. Exposure is a swappable component so a better option drops in later without touching the core.
 
 ### Observability (closes the heimdall log gap)
 
@@ -113,6 +113,8 @@ Realize the full [tafl design](../../design.md): the Agones operator in nordri, 
 - The data shape for an instance entry (the structured fields `start-server.sh` and the later scaffolder both produce).
 
 ## References
+
+*Paths below are relative to the yggdrasil workspace root (sibling component repos under `components/`); the in-repo design is also linked as `../../design.md` above.*
 
 - Tafl high-level design: `components/tafl/design.md`
 - Existing Valheim manifests (Phase-1 starting point): `components/kubicvalheim/`

@@ -581,7 +581,7 @@ ws commit -m "docs(kubicvalheim): backup component scaffold (inert S3 seam)"
 
 ### Task 5: `scripts/start-server.sh` (data-driven instancing — prove a 2nd instance renders)
 
-Kills the `valheim1/2/3` copy-paste. The script takes instance data (name, base game port, world, secret name) and renders an overlay directory `kustomize/overlays/<name>/` from a template — the SAME data shape a future Backstage scaffolder will produce. Each instance gets its own namespace (`valheim-<name>`) so base resource names stay constant. The script validates with `kustomize build` and optionally applies.
+Kills the `valheim1/2/3` copy-paste. The script takes instance data (name, base game port, world) and renders an overlay directory `kustomize/overlays/<name>/` from a template — the SAME data shape a future Backstage scaffolder will produce. Each instance gets its own namespace (`valheim-<name>`) so base resource names stay constant. The script validates with `kustomize build` and optionally applies.
 
 **Files (create):**
 - `scripts/start-server.sh`
@@ -612,6 +612,11 @@ QUERY_PORT=$((GAME_PORT + 1))
 
 if (( GAME_PORT < 30000 || GAME_PORT > 32766 )); then
   echo "ERROR: gamePort must be 30000-32766 so the query port (+1) stays in NodePort range." >&2
+  exit 1
+fi
+
+if [[ ! "$NAME" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+  echo "ERROR: <name> must be a DNS-1123 label (lowercase alphanumerics and '-', start/end alphanumeric)" >&2
   exit 1
 fi
 
@@ -810,14 +815,23 @@ patches:
       - op: replace
         path: /spec/ports/1/nodePort
         value: 32457
-  # Per-instance world/name (matches the plain "midgard" example).
-  - target:
+  # Per-instance name/world (strategic merge by env name — order-independent;
+  # matches the plain "midgard" example).
+  - patch: |-
+      apiVersion: apps/v1
       kind: Deployment
-      name: valheim
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/env/1/value
-        value: Midgard
+      metadata:
+        name: valheim
+      spec:
+        template:
+          spec:
+            containers:
+              - name: valheim-server
+                env:
+                  - name: NAME
+                    value: KubicValheim
+                  - name: WORLD
+                    value: Midgard
 ```
 
 - [ ] Render + validate:
@@ -950,7 +964,7 @@ Rewrite the rotted README so it documents the modernized three-flavor model and 
 
 - [ ] Author `README.md` (don't-wrap prose) covering: the one-core/three-flavors model + the additive-component idea; **Flavor 1 (Docker):** `docker/` quickstart; **Flavor 2 (plain k8s):** `kubectl apply -k kustomize/overlays/plain`, the NodePort/firewall note (allow UDP on the chosen node ports), connect at `<nodeIP>:<queryPort>`, and `scripts/start-server.sh <name>` for additional data-driven instances (one namespace per instance); **Flavor 3 (GitOps):** deployed by the nidavellir ArgoCD Application from the gitops overlay with the password from OpenBAO, plus observability (metrics in heimdall Grafana, logs in Loki via the cluster OTel Collector) — and the "test through Git" rule; the repo layout (`docker/`, `kustomize/{base,components,overlays}`, `scripts/`); the pinned image `mbround18/valheim:3.6.0` + Huginn (`HTTP_PORT`/`PUBLIC`/`ADDRESS`, `/metrics` + `/status`); the player-list ConfigMap (admin/banned/permitted); the backup seam is a scaffold, inert until Phase 3; remove the old NFS/datapod/`AUTO_BACKUP` instructions. Keep the existing license note (Apache-2.0 project; image is BSD-3-Clause upstream).
 
-- [ ] Validate (manual): the four greps above return hits; the old `valheim1`/`apply-server.sh`/`dynamic-nfs` references are gone.
+- [ ] Validate (manual): the four greps above return hits in the README / new paths. (Legacy `valheim1`/`apply-server.sh`/`dynamic-nfs` removal is the optional follow-up below — only then will repo-wide greps for those be clean.)
 
 - [ ] Optionally delete the now-obsolete files in a follow-up: `valheim1/`, `valheim2/`, `valheim3/`, `valheim-pvc-shared.yaml`, `valheim-player-lists-cm.yaml`, `valheim-secrets.yaml`, `apply-server.sh`, `delete.sh` (their content is migrated into base/overlays). Recommend a separate `chore:` commit so the modernization diff stays readable.
 
