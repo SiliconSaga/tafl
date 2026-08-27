@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Applied ONCE per cluster, by hand for now — tafl has no ArgoCD Application yet,
+# so this is not hydrated by anything. That is the same posture the rule had while
+# it lived in KubicValheim; moving it did not change how it is deployed, only
+# which repo has to own a cross-game concern.
+#
+#   ws k8s apply -k components/tafl/kustomize/fleet
+resources:
+  - namespace.yaml
+  - published-ip.yaml

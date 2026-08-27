@@ -1,0 +1,53 @@
+# Published-IP drift — ONE rule for the whole game fleet, across every game.
+#
+# `play.terasology.org` is a single A record. Every hosted server shares it and
+# they are distinguished only by port, which is the entire reason KubicValheim's
+# base uses externalTrafficPolicy: Cluster. So the address ceasing to be a node
+# address is ONE incident affecting all of them — not one per server, and not
+# one per game.
+#
+# This rule has now been de-duplicated twice, in the same direction both times.
+# It began as a copy inside each Valheim overlay, which produced a critical
+# watched-tier page PER NAMESPACE for a single DNS failure (Alertmanager groups
+# by [alertname, namespace]) and wrote the published address down once per
+# instance, each free to go stale independently — one already had. Consolidating
+# to a single rule fixed that but left it in KubicValheim, which would have made
+# game #2 either copy it or depend on a Valheim repo to get it. It lives in the
+# `tafl` component now because the condition was never about Valheim.
+#
+# WHEN THE PUBLISHED IP CHANGES, this file and the Namecheap A record are the
+# only two places to update. A blackbox probe against the hostname would remove
+# even that, and remains the better long-term design.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: game-fleet-published-ip
+  namespace: tafl
+  labels:
+    app.kubernetes.io/part-of: tafl
+spec:
+  groups:
+    - name: game-fleet-published-ip
+      rules:
+        # The `and on()` guard is load-bearing, not decoration. A bare absent()
+        # is equally true when kube-state-metrics is down, because then EVERY
+        # node-address series disappears — so a telemetry outage would raise a
+        # critical page claiming the published IP had drifted, whose runbook says
+        # "repoint DNS", which would be actively wrong. Requiring at least one
+        # ExternalIP series to exist means this fires only when the exporter is
+        # reporting AND this specific address is missing from what it reports.
+        - alert: GameFleetPublishedIPDrift
+          expr: >-
+            absent(kube_node_status_addresses{type="ExternalIP", address="34.75.63.41"})
+            and on() (count(kube_node_status_addresses{type="ExternalIP"}) > 0)
+          for: 5m
+          labels:
+            severity: critical
+            watched: "true"
+            # No `namespace` label, on purpose. Adding one would both misattribute
+            # a fleet-wide condition to a single instance and split the alert into
+            # one Alertmanager group per namespace — the multiple-pages problem
+            # this rule exists to fix.
+          annotations:
+            summary: "play.terasology.org points at 34.75.63.41, which is no longer any node's external IP — EVERY hosted game server is unreachable by name"
+            description: "34.75.63.41 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Repoint the A record at any current node address and update tafl's kustomize/fleet/published-ip.yaml to match. Current node addresses are on the Heimdall Overview dashboard."

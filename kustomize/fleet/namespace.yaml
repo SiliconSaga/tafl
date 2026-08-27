@@ -1,0 +1,14 @@
+# The `tafl` namespace holds what belongs to the game-hosting fleet as a whole
+# rather than to any one game. Right now that is a single PrometheusRule, which
+# is not much of a tenant — but the alternative was leaving a cross-game rule in
+# KubicValheim, where every future game would either duplicate it or import a
+# Valheim repo to get it.
+#
+# Nothing runs here. Prometheus discovers rules cluster-wide (heimdall sets
+# `ruleSelector: {}`), so this namespace is a home, not a scope.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tafl
+  labels:
+    app.kubernetes.io/part-of: tafl
