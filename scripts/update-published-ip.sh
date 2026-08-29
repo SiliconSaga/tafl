@@ -168,19 +168,37 @@ mkdir -p "$SNAPSHOT_DIR"
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 
 if [[ "$SHOW_ONLY" == true ]]; then
-    snap="$SNAPSHOT_DIR/${DOMAIN}-${STAMP}-show.xml"
-    get_hosts "$snap"
-    dns_addr="$(current_record_address "$snap")"
-    man_addr="$(manifest_address)"
     echo "domain:    $DOMAIN"
-    echo "record:    ${RECORD}.${DOMAIN} ($RECORD_TYPE) = ${dns_addr:-<not found>}"
-    echo "manifest:  $MANIFEST = ${man_addr:-<none>}"
-    if [[ "$dns_addr" == "$man_addr" ]]; then
-        echo "state:     IN SYNC"
-    else
-        echo "state:     ⚠ DRIFTED — the alert rule is watching an address nobody is sent to"
+
+    dns_addr=""
+    if [[ "$DO_DNS" == true ]]; then
+        snap="$SNAPSHOT_DIR/${DOMAIN}-${STAMP}-show.xml"
+        get_hosts "$snap"
+        dns_addr="$(current_record_address "$snap")"
+        echo "record:    ${RECORD}.${DOMAIN} ($RECORD_TYPE) = ${dns_addr:-<not found>}"
+        echo "snapshot:  $snap"
     fi
-    echo "snapshot:  $snap"
+
+    if [[ "$DO_MANIFEST" == true ]]; then
+        man_addr="$(manifest_address)"
+        echo "manifest:  $MANIFEST = ${man_addr:-<none>}"
+    fi
+
+    # The sync verdict is only meaningful when the record being inspected is the
+    # one the manifest describes. Comparing some other domain's record against
+    # this manifest would report DRIFTED for two values that were never supposed
+    # to match — a false alarm in the tool whose whole job is detecting drift.
+    if [[ "$DO_DNS" == true && "$DO_MANIFEST" == true ]]; then
+        if [[ "$DOMAIN" == "terasology.org" && "$RECORD" == "play" ]]; then
+            if [[ "$dns_addr" == "$man_addr" ]]; then
+                echo "state:     IN SYNC"
+            else
+                echo "state:     ⚠ DRIFTED — the alert rule is watching an address nobody is sent to"
+            fi
+        else
+            echo "state:     n/a — ${RECORD}.${DOMAIN} is not the record this manifest tracks"
+        fi
+    fi
     exit 0
 fi
 
