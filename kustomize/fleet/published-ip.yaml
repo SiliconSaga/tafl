@@ -24,9 +24,15 @@
 # sits green while the fleet is unreachable.
 #
 # WHEN THE PUBLISHED IP CHANGES, this file and the Namecheap A record are the
-# only two places to update, and they must be updated together. A blackbox probe
-# against the hostname would close the gap by testing the name rather than a
-# transcribed address, and remains the better long-term design.
+# only two places to update, and they must be updated together. Use
+# `scripts/update-published-ip.sh <new-ip> --apply`, which does both halves in
+# one operation — doing it by hand is what the blind spot above punishes. Never
+# reach for nordri's scripts/update-dns-namecheap.sh: it sends only `@` and `*`
+# to a whole-domain-declarative API, so against terasology.org it would delete
+# every other record.
+#
+# Alerting on the RESOLVED address instead of a transcribed one would remove
+# this file's half of the job entirely, and remains the better design — tafl#4.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -59,4 +65,4 @@ spec:
             # this rule exists to fix.
           annotations:
             summary: "34.138.71.250 is no longer any node's external IP, and it is the address play.terasology.org is configured to point at — EVERY hosted game server is unreachable by name"
-            description: "34.138.71.250 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Repoint the A record at any current node address and update tafl's kustomize/fleet/published-ip.yaml to match. Current node addresses are on the Heimdall Overview dashboard."
+            description: "34.138.71.250 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Fix: run tafl's scripts/update-published-ip.sh <new-ip> --apply, which updates the A record and this file together. Prefer a node that is currently running a game pod — those carry safe-to-evict: false, so the autoscaler cannot reclaim them out from under the address again. Current node addresses are on the Heimdall Overview dashboard."
