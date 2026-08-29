@@ -47,7 +47,7 @@ spec:
         # reporting AND this specific address is missing from what it reports.
         - alert: GameFleetPublishedIPDrift
           expr: >-
-            absent(kube_node_status_addresses{type="ExternalIP", address="34.75.63.41"})
+            absent(kube_node_status_addresses{type="ExternalIP", address="34.138.71.250"})
             and on() (count(kube_node_status_addresses{type="ExternalIP"}) > 0)
           for: 5m
           labels:
@@ -58,5 +58,5 @@ spec:
             # one Alertmanager group per namespace — the multiple-pages problem
             # this rule exists to fix.
           annotations:
-            summary: "34.75.63.41 is no longer any node's external IP, and it is the address play.terasology.org is configured to point at — EVERY hosted game server is unreachable by name"
-            description: "34.75.63.41 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Repoint the A record at any current node address and update tafl's kustomize/fleet/published-ip.yaml to match. Current node addresses are on the Heimdall Overview dashboard."
+            summary: "34.138.71.250 is no longer any node's external IP, and it is the address play.terasology.org is configured to point at — EVERY hosted game server is unreachable by name"
+            description: "34.138.71.250 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Repoint the A record at any current node address and update tafl's kustomize/fleet/published-ip.yaml to match. Current node addresses are on the Heimdall Overview dashboard."
