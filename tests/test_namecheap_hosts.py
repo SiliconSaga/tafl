@@ -181,6 +181,18 @@ class TestRoundTrippability(unittest.TestCase):
             nh.assert_round_trippable(parsed)
         self.assertIn("off A", str(ctx.exception))
 
+    def test_refuses_records_with_no_IsActive_attribute(self):
+        """Absent is not the same as active. setHosts cannot restore a disabled
+        record, so assuming `true` would let an unprovable rewrite through."""
+        xml = wrap(
+            '<host HostId="1" Name="@" Type="A" Address="1.2.3.4" MXPref="10" '
+            'TTL="1799" AssociatedAppTitle="" FriendlyName="" IsDDNSEnabled="false" />'
+        )
+        parsed = nh.parse_get_hosts(xml)
+        with self.assertRaises(nh.NamecheapError) as ctx:
+            nh.assert_round_trippable(parsed)
+        self.assertIn("did not report IsActive", str(ctx.exception))
+
     def test_accepts_all_active(self):
         nh.assert_round_trippable(nh.parse_get_hosts(load()))
 

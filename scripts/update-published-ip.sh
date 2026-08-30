@@ -203,7 +203,21 @@ if [[ "$SHOW_ONLY" == true ]]; then
 fi
 
 [[ -n "$NEW_IP" ]] || die "no new IP given. Usage: $0 <new-ip> [--apply]  (or --show)"
-[[ "$NEW_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "'$NEW_IP' is not an IPv4 address"
+
+# A dotted-quad regex accepts 999.999.999.999, and this value is written into an
+# `absent()` matcher — so a bad address does not fail loudly, it produces a rule
+# that can never match and therefore pages forever about a fleet that is fine.
+"$PYTHON" -c 'import ipaddress,sys; ipaddress.IPv4Address(sys.argv[1])' "$NEW_IP" 2>/dev/null \
+    || die "'$NEW_IP' is not a valid IPv4 address"
+
+# Preflight the manifest BEFORE touching DNS. Half 2 failing after Half 1 has
+# already written leaves the A record and the alert rule disagreeing — exactly
+# the drift this script exists to prevent, manufactured by the script itself.
+if [[ "$DO_MANIFEST" == true ]]; then
+    [[ -f "$MANIFEST" ]] || die "manifest not found: $MANIFEST"
+    [[ -n "$(manifest_address)" ]] || die "no address=\"…\" found in $MANIFEST"
+    [[ -w "$MANIFEST" ]] || die "manifest is not writable: $MANIFEST"
+fi
 
 echo "Repointing the published game-fleet address to $NEW_IP"
 echo "  domain:   $DOMAIN (record ${RECORD}, type ${RECORD_TYPE})"
@@ -244,7 +258,12 @@ if [[ "$DO_DNS" == true ]]; then
         require_credentials
         detect_client_ip
         RESULT="$SNAPSHOT_DIR/${DOMAIN}-${STAMP}-setresult.xml"
-        curl -sf --max-time 30 -o "$RESULT" --get "$API_BASE" \
+        # POST, not GET. terasology.org's 15 records expand to ~80 parameters, and
+        # Namecheap's own documentation says to POST beyond 10 hostnames rather
+        # than risk a truncated query string. A URL-length failure here would not
+        # be a clean error — it would be a partial record set sent to an API that
+        # treats what it receives as the entire domain.
+        curl -sf --max-time 30 -o "$RESULT" "$API_BASE" \
             --data-urlencode "ApiUser=${NAMECHEAP_API_USER}" \
             --data-urlencode "ApiKey=${NAMECHEAP_API_KEY}" \
             --data-urlencode "UserName=${NAMECHEAP_API_USER}" \
@@ -264,8 +283,13 @@ if [[ "$DO_DNS" == true ]]; then
         get_hosts "$VERIFY"
         after_count=$(grep -c '<host ' "$VERIFY")
         after_addr="$(current_record_address "$VERIFY")"
+        # Fatal, not a warning. Continuing past a count mismatch would go on to
+        # print "records intact" because the target address matched — announcing
+        # success while unrelated records have been deleted from the domain. That
+        # is the one outcome every guard in this script exists to prevent, so it
+        # must not be reachable by a path that merely logs on the way past.
         [[ "$after_count" -eq "$read_count" ]] \
-            || echo "⚠ WARNING: record count is now $after_count, was $read_count. Compare $SNAPSHOT and $VERIFY." >&2
+            || die "record count is now $after_count, was $read_count — records were LOST. Compare $SNAPSHOT against $VERIFY and restore from $SNAPSHOT."
         [[ "$after_addr" == "$NEW_IP" ]] \
             || die "verification failed: ${RECORD}.${DOMAIN} reads '$after_addr', expected '$NEW_IP'"
         echo "verified: ${RECORD}.${DOMAIN} = $after_addr ($after_count records intact)"

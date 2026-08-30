@@ -119,10 +119,24 @@ def assert_round_trippable(parsed):
     make a human decide than quietly re-enable something switched off on
     purpose.
     """
+    # A missing IsActive is rejected rather than assumed active. setHosts cannot
+    # restore a disabled record, so "we did not see the flag" and "the flag said
+    # active" are different claims, and only the second one justifies a rewrite.
+    unknown = [
+        f"{r['HostName']} {r['RecordType']}"
+        for r in parsed["records"]
+        if r.get("_IsActive") is None
+    ]
+    if unknown:
+        raise NamecheapError(
+            "these records did not report IsActive, so a rewrite cannot be shown "
+            "to preserve their state: " + ", ".join(unknown)
+        )
+
     disabled = [
         f"{r['HostName']} {r['RecordType']}"
         for r in parsed["records"]
-        if (r.get("_IsActive") or "true").lower() != "true"
+        if r["_IsActive"].lower() != "true"
     ]
     if disabled:
         raise NamecheapError(
