@@ -53,7 +53,7 @@ spec:
         # reporting AND this specific address is missing from what it reports.
         - alert: GameFleetPublishedIPDrift
           expr: >-
-            absent(kube_node_status_addresses{type="ExternalIP", address="34.138.71.250"})
+            absent(kube_node_status_addresses{type="ExternalIP", address="34.148.17.198"})
             and on() (count(kube_node_status_addresses{type="ExternalIP"}) > 0)
           for: 5m
           labels:
@@ -64,5 +64,5 @@ spec:
             # one Alertmanager group per namespace — the multiple-pages problem
             # this rule exists to fix.
           annotations:
-            summary: "34.138.71.250 is no longer any node's external IP, and it is the address play.terasology.org is configured to point at — EVERY hosted game server is unreachable by name"
-            description: "34.138.71.250 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Fix: run tafl's scripts/update-published-ip.sh <new-ip> --apply, which updates the A record and this file together. Prefer a node that is currently running a game pod — those carry safe-to-evict: false, so the autoscaler cannot reclaim them out from under the address again. Current node addresses are on the Heimdall Overview dashboard."
+            summary: "34.148.17.198 is no longer any node's external IP, and it is the address play.terasology.org is configured to point at — EVERY hosted game server is unreachable by name"
+            description: "34.148.17.198 does not belong to any current node, so nothing behind play.terasology.org resolves to a reachable address. The servers themselves are almost certainly fine — under externalTrafficPolicy: Cluster ANY node's external IP serves these NodePorts, so this is a DNS problem, not a game problem. Fix: run tafl's scripts/update-published-ip.sh <new-ip> --apply, which updates the A record and this file together. Prefer a node that is currently running a game pod — those carry safe-to-evict: false, so the autoscaler cannot reclaim them out from under the address again. Current node addresses are on the Heimdall Overview dashboard."
