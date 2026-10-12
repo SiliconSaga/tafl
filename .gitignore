@@ -2,3 +2,6 @@
 # scripts/update-published-ip.sh. They are the undo for a setHosts call and
 # contain the live DNS inventory, so they stay local.
 .dns-snapshots/
+
+# Bytecode from running scripts/namecheap_hosts.py and its tests.
+__pycache__/
